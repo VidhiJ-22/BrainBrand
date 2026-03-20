@@ -25,7 +25,7 @@ export default async function CalendarPage() {
       .from("drafts")
       .select("*")
       .eq("user_id", user.id)
-      .in("status", ["draft", "scheduled", "published"])
+      .in("status", ["draft", "scheduled", "published", "failed"])
       .order("created_at", { ascending: false });
     drafts = (data || []) as Draft[];
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Draft } from "@/lib/types/database";
@@ -18,6 +18,9 @@ import {
   Brain,
   Calendar as CalIcon,
   Send,
+  Play,
+  AlertCircle,
+  CheckCircle2,
 } from "lucide-react";
 import {
   format,
@@ -42,12 +45,14 @@ const STATUS_COLORS: Record<string, string> = {
   draft: "border-l-slate-400 bg-slate-50",
   scheduled: "border-l-amber-400 bg-amber-50",
   published: "border-l-emerald-400 bg-emerald-50",
+  failed: "border-l-red-400 bg-red-50",
 };
 
 const STATUS_DOT: Record<string, string> = {
   draft: "bg-slate-400",
   scheduled: "bg-amber-400",
   published: "bg-emerald-400",
+  failed: "bg-red-400",
 };
 
 const TYPE_ICON: Record<string, React.ElementType> = {
@@ -75,7 +80,16 @@ export default function CalendarView({
   const [panelTime, setPanelTime] = useState("09:00");
   const [saving, setSaving] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [runningCron, setRunningCron] = useState(false);
+  const [cronResult, setCronResult] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const router = useRouter();
+
+  // Auto-dismiss toast
+  const showToast = useCallback((type: "success" | "error", message: string) => {
+    setToast({ type, message });
+    setTimeout(() => setToast(null), 4000);
+  }, []);
 
   // Map drafts to their dates
   const draftsByDate = useMemo(() => {
@@ -123,7 +137,11 @@ export default function CalendarView({
   const openPanel = useCallback((draft: Draft) => {
     setSelectedDraft(draft);
     setPanelContent(draft.content);
-    setPanelStatus(draft.status === "published" ? "draft" : (draft.status as "draft" | "scheduled"));
+    setPanelStatus(
+      draft.status === "draft" || draft.status === "scheduled"
+        ? draft.status
+        : "draft"
+    );
     if (draft.scheduled_at) {
       const dt = parseISO(draft.scheduled_at);
       setPanelDate(format(dt, "yyyy-MM-dd"));
@@ -135,6 +153,17 @@ export default function CalendarView({
   }, []);
 
   const closePanel = () => setSelectedDraft(null);
+
+  // Close panel on Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") closePanel();
+    };
+    if (selectedDraft) {
+      document.addEventListener("keydown", handleKeyDown);
+      return () => document.removeEventListener("keydown", handleKeyDown);
+    }
+  }, [selectedDraft]);
 
   // Save from panel
   const handlePanelSave = async () => {
@@ -164,9 +193,12 @@ export default function CalendarView({
         );
         closePanel();
         router.refresh();
+        showToast("success", "Post updated");
+      } else {
+        showToast("error", data.error || "Failed to save changes");
       }
     } catch {
-      // handled silently
+      showToast("error", "Failed to save. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -174,19 +206,25 @@ export default function CalendarView({
 
   // Delete from panel
   const handlePanelDelete = async () => {
-    if (!selectedDraft || !confirm("Delete this post?")) return;
+    if (!selectedDraft || !confirm("Delete this post? This can't be undone.")) return;
     setSaving(true);
     try {
-      await fetch("/api/posts/update", {
+      const res = await fetch("/api/posts/update", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ draft_id: selectedDraft.id, delete: true }),
       });
-      setDrafts((prev) => prev.filter((d) => d.id !== selectedDraft.id));
-      closePanel();
-      router.refresh();
+      if (res.ok) {
+        setDrafts((prev) => prev.filter((d) => d.id !== selectedDraft.id));
+        closePanel();
+        router.refresh();
+        showToast("success", "Post deleted");
+      } else {
+        const data = await res.json();
+        showToast("error", data.error || "Failed to delete");
+      }
     } catch {
-      // handled silently
+      showToast("error", "Failed to delete. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -200,7 +238,10 @@ export default function CalendarView({
       const res = await fetch("/api/posts/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ draft_id: selectedDraft.id }),
+        body: JSON.stringify({
+          draft_id: selectedDraft.id,
+          content: panelContent,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -213,11 +254,12 @@ export default function CalendarView({
         );
         closePanel();
         router.refresh();
+        showToast("success", "Published to LinkedIn!");
       } else {
-        alert(data.error || "Failed to publish");
+        showToast("error", data.error || "Failed to publish");
       }
     } catch {
-      alert("Failed to publish. Please try again.");
+      showToast("error", "Failed to publish. Please try again.");
     } finally {
       setSaving(false);
     }
@@ -261,6 +303,26 @@ export default function CalendarView({
       }),
     });
     router.refresh();
+  };
+
+  // Dev: manually trigger cron job
+  const handleRunCron = async () => {
+    setRunningCron(true);
+    setCronResult(null);
+    try {
+      const res = await fetch("/api/cron/publish-scheduled", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setCronResult(`Done: ${data.published} published, ${data.failed} failed (${data.total} total)`);
+        router.refresh();
+      } else {
+        setCronResult(`Error: ${data.error || "Unknown error"}`);
+      }
+    } catch {
+      setCronResult("Error: Failed to reach cron endpoint");
+    } finally {
+      setRunningCron(false);
+    }
   };
 
   const headerLabel =
@@ -324,29 +386,72 @@ export default function CalendarView({
                 <ChevronRight className="h-5 w-5" />
               </button>
             </div>
-            <div className="flex gap-1 rounded-lg border border-gray-200 p-1">
-              <button
-                onClick={() => setView("month")}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                  view === "month"
-                    ? "bg-indigo-50 text-indigo-600"
-                    : "text-slate-500 hover:bg-gray-50"
-                }`}
-              >
-                Month
-              </button>
-              <button
-                onClick={() => setView("week")}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
-                  view === "week"
-                    ? "bg-indigo-50 text-indigo-600"
-                    : "text-slate-500 hover:bg-gray-50"
-                }`}
-              >
-                Week
-              </button>
+            <div className="flex items-center gap-3">
+              {/* Dev Only: Run Scheduled Posts */}
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleRunCron}
+                  disabled={runningCron}
+                  className="flex items-center gap-1.5 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100 disabled:opacity-50"
+                >
+                  {runningCron ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Run Scheduled Posts
+                </button>
+                <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-amber-600">
+                  Dev Only
+                </span>
+              </div>
+
+              <div className="flex gap-1 rounded-lg border border-gray-200 p-1">
+                <button
+                  onClick={() => setView("month")}
+                  className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                    view === "month"
+                      ? "bg-indigo-50 text-indigo-600"
+                      : "text-slate-500 hover:bg-gray-50"
+                  }`}
+                >
+                  Month
+                </button>
+                <button
+                  onClick={() => setView("week")}
+                  className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${
+                    view === "week"
+                      ? "bg-indigo-50 text-indigo-600"
+                      : "text-slate-500 hover:bg-gray-50"
+                  }`}
+                >
+                  Week
+                </button>
+              </div>
             </div>
           </div>
+
+          {/* Cron result banner */}
+          {cronResult && (
+            <div className={`mb-4 flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm ${
+              cronResult.startsWith("Error")
+                ? "border border-red-200 bg-red-50 text-red-700"
+                : "border border-emerald-200 bg-emerald-50 text-emerald-700"
+            }`}>
+              {cronResult.startsWith("Error") ? (
+                <AlertCircle className="h-4 w-4 shrink-0" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 shrink-0" />
+              )}
+              {cronResult}
+              <button
+                onClick={() => setCronResult(null)}
+                className="ml-auto text-xs opacity-60 hover:opacity-100"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
 
           {/* Day headers */}
           <div className="grid grid-cols-7 border-b border-gray-100">
@@ -456,6 +561,10 @@ export default function CalendarView({
               <span className={`h-2 w-2 rounded-full ${STATUS_DOT.published}`} />
               Published
             </span>
+            <span className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${STATUS_DOT.failed}`} />
+              Failed
+            </span>
             <span className="ml-auto text-slate-300">
               Drag drafts to reschedule
             </span>
@@ -476,7 +585,22 @@ export default function CalendarView({
           <div className="fixed bottom-0 right-0 top-0 z-50 flex w-full max-w-md flex-col bg-white shadow-2xl">
             {/* Panel header */}
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
-              <h3 className="font-semibold text-slate-900">Edit Post</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="font-semibold text-slate-900">Edit Post</h3>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                    selectedDraft.status === "published"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : selectedDraft.status === "scheduled"
+                        ? "bg-blue-50 text-blue-700"
+                        : selectedDraft.status === "failed"
+                          ? "bg-red-50 text-red-700"
+                          : "bg-gray-100 text-gray-600"
+                  }`}
+                >
+                  {selectedDraft.status.charAt(0).toUpperCase() + selectedDraft.status.slice(1)}
+                </span>
+              </div>
               <button
                 onClick={closePanel}
                 className="rounded-lg p-1 text-slate-400 hover:bg-gray-100 hover:text-slate-600"
@@ -495,7 +619,8 @@ export default function CalendarView({
                 <textarea
                   value={panelContent}
                   onChange={(e) => setPanelContent(e.target.value)}
-                  className="min-h-[160px] w-full resize-none rounded-lg border border-gray-200 p-3 text-sm text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100"
+                  rows={8}
+                  className="min-h-[200px] w-full resize-y rounded-lg border border-gray-200 p-3 text-sm leading-relaxed text-slate-700 focus:border-indigo-300 focus:outline-none focus:ring-2 focus:ring-indigo-100 disabled:bg-gray-50 disabled:text-slate-500"
                   disabled={selectedDraft.status === "published"}
                 />
               </div>
@@ -602,13 +727,27 @@ export default function CalendarView({
             </div>
 
             {/* Panel footer */}
-            <div className="flex gap-2 border-t border-gray-100 p-4">
-              {selectedDraft.status !== "published" && (
-                <>
+            <div className="border-t border-gray-100 p-4">
+              {selectedDraft.status === "published" ? (
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handlePanelDelete}
                     disabled={saving}
-                    className="flex items-center gap-1.5 rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 transition-colors hover:bg-red-50"
+                    className="flex items-center gap-1.5 text-sm font-medium text-red-500 transition-colors hover:text-red-700"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete
+                  </button>
+                  <span className="ml-auto text-sm text-slate-400">
+                    Published posts cannot be edited
+                  </span>
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handlePanelDelete}
+                    disabled={saving}
+                    className="flex items-center gap-1.5 text-sm font-medium text-red-500 transition-colors hover:text-red-700"
                   >
                     <Trash2 className="h-4 w-4" />
                     Delete
@@ -625,24 +764,39 @@ export default function CalendarView({
                     )}
                     Save
                   </button>
-                  <button
-                    onClick={handlePanelPublish}
-                    disabled={saving || !panelContent.trim()}
-                    className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
-                  >
-                    <Send className="h-4 w-4" />
-                    Publish
-                  </button>
-                </>
-              )}
-              {selectedDraft.status === "published" && (
-                <p className="flex-1 text-center text-sm text-slate-400">
-                  Published posts cannot be edited
-                </p>
+                  {selectedDraft.status === "draft" && (
+                    <button
+                      onClick={handlePanelPublish}
+                      disabled={saving || !panelContent.trim()}
+                      className="flex items-center gap-1.5 rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-600 disabled:opacity-50"
+                    >
+                      <Send className="h-4 w-4" />
+                      Publish Now
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           </div>
         </>
+      )}
+
+      {/* Toast notification */}
+      {toast && (
+        <div
+          className={`fixed bottom-6 left-1/2 z-[60] flex -translate-x-1/2 items-center gap-2 rounded-lg px-4 py-3 text-sm font-medium shadow-lg transition-all ${
+            toast.type === "success"
+              ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          {toast.type === "success" ? (
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
+          ) : (
+            <AlertCircle className="h-4 w-4 shrink-0" />
+          )}
+          {toast.message}
+        </div>
       )}
     </div>
   );

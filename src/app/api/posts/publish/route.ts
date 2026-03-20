@@ -28,7 +28,15 @@ export async function POST(request: NextRequest) {
       .eq("id", user.id)
       .single();
 
+    console.log("[publish-route] User:", user.id);
+    console.log("[publish-route] LinkedIn connected:", profile?.linkedin_connected);
+    console.log("[publish-route] Token length:", profile?.linkedin_access_token?.length || 0);
+    console.log("[publish-route] Token preview:", profile?.linkedin_access_token?.substring(0, 10) + "...");
+    console.log("[publish-route] LinkedIn sub:", profile?.linkedin_sub);
+    console.log("[publish-route] Token expires at:", profile?.linkedin_token_expires_at);
+
     if (!profile?.linkedin_connected || !profile.linkedin_access_token) {
+      console.error("[publish-route] BLOCKED: LinkedIn not connected or no token");
       return NextResponse.json(
         { error: "LinkedIn is not connected" },
         { status: 400 }
@@ -38,13 +46,15 @@ export async function POST(request: NextRequest) {
     // Check token expiry
     if (profile.linkedin_token_expires_at) {
       const expiresAt = new Date(profile.linkedin_token_expires_at);
-      if (expiresAt < new Date()) {
+      const isExpired = expiresAt < new Date();
+      console.log("[publish-route] Token expired:", isExpired, "| Expires:", expiresAt.toISOString(), "| Now:", new Date().toISOString());
+      if (isExpired) {
         return NextResponse.json(
           {
             error: "LinkedIn token expired",
             code: "TOKEN_EXPIRED",
             message:
-              "Your LinkedIn access token has expired. Please reconnect your account in Settings.",
+              "Your LinkedIn connection has expired. Please reconnect in Settings.",
           },
           { status: 401 }
         );
@@ -77,17 +87,22 @@ export async function POST(request: NextRequest) {
 
     if (!content?.trim()) {
       return NextResponse.json(
-        { error: "Post content is required" },
+        { error: "Cannot publish an empty post." },
         { status: 400 }
       );
     }
 
+    console.log("[publish-route] Content to publish (first 50 chars):", content.substring(0, 50) + "...");
+
     // Publish to LinkedIn
+    console.log("[publish-route] Calling publish-post.ts...");
     const result = await publishToLinkedIn(
       profile.linkedin_access_token,
       profile.linkedin_sub!,
       content
     );
+
+    console.log("[publish-route] Publish result:", JSON.stringify(result));
 
     if (!result.success) {
       // If we have a draft, mark it as failed
@@ -137,6 +152,8 @@ export async function POST(request: NextRequest) {
 
       draftId = newDraft?.id;
     }
+
+    console.log("[publish-route] Draft updated/created, draft_id:", draftId);
 
     return NextResponse.json({
       success: true,

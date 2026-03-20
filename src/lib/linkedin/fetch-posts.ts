@@ -114,6 +114,8 @@ export async function fetchLinkedInPosts(
   // Fetch the member's person URN using the sub from OpenID
   // The sub from userinfo is the person ID
   const authorUrn = `urn:li:person:${linkedinSub}`;
+  console.log("[linkedin] Author URN:", authorUrn);
+  console.log("[linkedin] Token preview:", accessToken.substring(0, 10) + "...");
 
   let hasMore = true;
 
@@ -127,6 +129,8 @@ export async function fetchLinkedInPosts(
       postsUrl.searchParams.set("start", start.toString());
       postsUrl.searchParams.set("sortBy", "LAST_MODIFIED");
 
+      console.log("[linkedin] Calling v2/posts:", postsUrl.toString());
+
       const response = await fetch(postsUrl.toString(), {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -135,12 +139,16 @@ export async function fetchLinkedInPosts(
         },
       });
 
+      console.log("[linkedin] v2/posts response status:", response.status);
+
       if (!response.ok) {
+        const errText = await response.text();
+        console.error("[linkedin] v2/posts error body:", errText);
+
         // If v2/posts fails, try ugcPosts endpoint
         if (response.status === 403 || response.status === 401) {
           console.warn(
-            "LinkedIn v2/posts not available, trying ugcPosts...",
-            response.status
+            "[linkedin] v2/posts not available (status " + response.status + "), falling back to ugcPosts..."
           );
           const ugcPosts = await fetchViaUgcPosts(
             accessToken,
@@ -151,12 +159,9 @@ export async function fetchLinkedInPosts(
           return ugcPosts;
         }
 
-        const errText = await response.text();
-        console.error(`LinkedIn API error (${response.status}):`, errText);
-
         // If rate limited, stop
         if (response.status === 429) {
-          console.warn("LinkedIn rate limit hit, stopping with current posts");
+          console.warn("[linkedin] Rate limit hit, stopping with current posts");
           break;
         }
 
@@ -164,6 +169,12 @@ export async function fetchLinkedInPosts(
       }
 
       const data = await response.json();
+      console.log("[linkedin] v2/posts response keys:", Object.keys(data));
+      console.log("[linkedin] v2/posts elements count:", (data.elements || []).length);
+      if ((data.elements || []).length > 0) {
+        console.log("[linkedin] First element keys:", Object.keys(data.elements[0]));
+        console.log("[linkedin] First element preview:", JSON.stringify(data.elements[0]).substring(0, 500));
+      }
       const elements = (data.elements || []) as Record<string, unknown>[];
 
       if (elements.length === 0) {
@@ -243,6 +254,8 @@ async function fetchViaUgcPosts(
   const count = 50;
   let hasMore = true;
 
+  console.log("[linkedin] === FALLBACK: trying ugcPosts ===");
+
   while (hasMore && posts.length < maxPosts) {
     try {
       const url = new URL("https://api.linkedin.com/v2/ugcPosts");
@@ -252,6 +265,8 @@ async function fetchViaUgcPosts(
       url.searchParams.set("start", start.toString());
       url.searchParams.set("sortBy", "LAST_MODIFIED");
 
+      console.log("[linkedin] Calling ugcPosts:", url.toString());
+
       const response = await fetch(url.toString(), {
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -259,9 +274,11 @@ async function fetchViaUgcPosts(
         },
       });
 
+      console.log("[linkedin] ugcPosts response status:", response.status);
+
       if (!response.ok) {
         const errText = await response.text();
-        console.error(`LinkedIn ugcPosts error (${response.status}):`, errText);
+        console.error("[linkedin] ugcPosts error body:", errText);
 
         // If this also fails, the app's API access may be insufficient
         // Return whatever we have (possibly empty)
@@ -276,16 +293,26 @@ async function fetchViaUgcPosts(
       }
 
       const data = await response.json();
+      console.log("[linkedin] ugcPosts response keys:", Object.keys(data));
+      console.log("[linkedin] ugcPosts elements count:", (data.elements || []).length);
+      if ((data.elements || []).length > 0) {
+        console.log("[linkedin] ugcPosts first element keys:", Object.keys(data.elements[0]));
+        console.log("[linkedin] ugcPosts first element preview:", JSON.stringify(data.elements[0]).substring(0, 500));
+      }
       const elements = (data.elements || []) as Record<string, unknown>[];
 
       if (elements.length === 0) {
+        console.log("[linkedin] ugcPosts returned 0 elements, stopping");
         hasMore = false;
         break;
       }
 
       for (const post of elements) {
         const text = extractPostText(post);
-        if (!text) continue;
+        if (!text) {
+          console.log("[linkedin] Skipping post with no text, keys:", Object.keys(post));
+          continue;
+        }
 
         const postId = (post.id as string) || `ugc_${start}_${posts.length}`;
 

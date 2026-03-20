@@ -26,16 +26,32 @@ export async function publishToLinkedIn(
   content: string
 ): Promise<PublishResult> {
   const authorUrn = `urn:li:person:${linkedinSub}`;
+  console.log("[publish] Starting publish to LinkedIn");
+  console.log("[publish] Author URN:", authorUrn);
+  console.log("[publish] Token length:", accessToken?.length || 0);
+  console.log("[publish] Token preview:", accessToken?.substring(0, 10) + "...");
+  console.log("[publish] Content length:", content.length);
+  console.log("[publish] Content preview:", content.substring(0, 50) + "...");
 
   try {
     // Try v2/posts endpoint first (Community Management API / newer apps)
     const result = await publishViaPostsApi(accessToken, authorUrn, content);
-    if (result.success) return result;
+    if (result.success) {
+      console.log("[publish] Publish successful! URN:", result.linkedin_post_id);
+      return result;
+    }
 
     // Fallback to UGC Posts endpoint (Share on LinkedIn product)
-    return await publishViaUgcApi(accessToken, authorUrn, content);
+    console.log("[publish] Falling back to ugcPosts...");
+    const ugcResult = await publishViaUgcApi(accessToken, authorUrn, content);
+    if (ugcResult.success) {
+      console.log("[publish] UGC publish successful! URN:", ugcResult.linkedin_post_id);
+    } else {
+      console.error("[publish] Publish FAILED:", ugcResult.error);
+    }
+    return ugcResult;
   } catch (err) {
-    console.error("LinkedIn publish error:", err);
+    console.error("[publish] Publish FAILED with exception:", err);
     return {
       success: false,
       error: "Failed to publish to LinkedIn. Please try again.",
@@ -61,24 +77,36 @@ async function publishViaPostsApi(
     isReshareDisabledByAuthor: false,
   };
 
-  const response = await fetch("https://api.linkedin.com/v2/posts", {
+  const url = "https://api.linkedin.com/v2/posts";
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+    "LinkedIn-Version": "202401",
+    "X-Restli-Protocol-Version": "2.0.0",
+  };
+
+  console.log("[publish] v2/posts request:", {
+    url,
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "LinkedIn-Version": "202401",
-      "X-Restli-Protocol-Version": "2.0.0",
-    },
+    headers: { ...headers, Authorization: `Bearer ${accessToken.substring(0, 10)}...` },
+    body,
+  });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
     body: JSON.stringify(body),
   });
 
+  console.log("[publish] v2/posts response status:", response.status);
+
   if (!response.ok) {
+    const errText = await response.text();
+    console.error("[publish] v2/posts error body:", errText);
     if (response.status === 403 || response.status === 401) {
       // Permission issue — fall through to UGC fallback
       return { success: false, error: "v2/posts not available" };
     }
-    const errText = await response.text();
-    console.error(`LinkedIn v2/posts publish error (${response.status}):`, errText);
     return {
       success: false,
       error: `LinkedIn API error: ${response.status}`,
@@ -90,6 +118,8 @@ async function publishViaPostsApi(
     response.headers.get("x-restli-id") ||
     response.headers.get("x-linkedin-id") ||
     "";
+
+  console.log("[publish] v2/posts success, post ID:", postId);
 
   return {
     success: true,
@@ -118,19 +148,31 @@ async function publishViaUgcApi(
     },
   };
 
-  const response = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+  const url = "https://api.linkedin.com/v2/ugcPosts";
+  const headers = {
+    Authorization: `Bearer ${accessToken}`,
+    "Content-Type": "application/json",
+    "X-Restli-Protocol-Version": "2.0.0",
+  };
+
+  console.log("[publish] ugcPosts request:", {
+    url,
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      "X-Restli-Protocol-Version": "2.0.0",
-    },
+    headers: { ...headers, Authorization: `Bearer ${accessToken.substring(0, 10)}...` },
+    body,
+  });
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
     body: JSON.stringify(body),
   });
 
+  console.log("[publish] ugcPosts response status:", response.status);
+
   if (!response.ok) {
     const errText = await response.text();
-    console.error(`LinkedIn ugcPosts publish error (${response.status}):`, errText);
+    console.error("[publish] ugcPosts error body:", errText);
     return {
       success: false,
       error:
@@ -142,6 +184,9 @@ async function publishViaUgcApi(
 
   const data = await response.json();
   const postId = (data.id as string) || "";
+
+  console.log("[publish] ugcPosts success, post ID:", postId);
+  console.log("[publish] ugcPosts full response:", JSON.stringify(data, null, 2));
 
   return {
     success: true,

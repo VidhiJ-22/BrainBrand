@@ -40,7 +40,7 @@ export default async function CreatePostPage() {
       />
 
       <CreatePostEditor
-        userName={profile?.full_name || "User"}
+        userName={profile?.full_name || user?.email?.split("@")[0] || "User"}
         userHeadline={profile?.linkedin_headline || "LinkedIn Member"}
         userAvatar={profile?.linkedin_profile_picture || profile?.avatar_url || null}
         hasBrandBrain={hasBrandBrain}

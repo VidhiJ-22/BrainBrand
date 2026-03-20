@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "Post deleted." });
     }
 
-    const updates: Record<string, unknown> = {};
+    const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
     if (body.content !== undefined) updates.content = body.content;
     if (body.status !== undefined) updates.status = body.status;
     if (body.scheduled_at !== undefined) updates.scheduled_at = body.scheduled_at;

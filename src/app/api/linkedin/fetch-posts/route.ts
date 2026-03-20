@@ -44,7 +44,16 @@ export async function POST() {
       );
     }
 
+    console.log("[fetch-posts] Profile loaded:", {
+      linkedin_connected: profile.linkedin_connected,
+      has_token: !!profile.linkedin_access_token,
+      token_preview: profile.linkedin_access_token?.substring(0, 10) + "...",
+      linkedin_sub: profile.linkedin_sub,
+      token_expires_at: profile.linkedin_token_expires_at,
+    });
+
     if (!profile.linkedin_connected || !profile.linkedin_access_token) {
+      console.log("[fetch-posts] BLOCKED: linkedin_connected =", profile.linkedin_connected, "has_token =", !!profile.linkedin_access_token);
       return NextResponse.json(
         { error: "LinkedIn not connected" },
         { status: 400 }
@@ -68,14 +77,16 @@ export async function POST() {
     }
 
     // Fetch posts from LinkedIn
+    console.log("[fetch-posts] Starting LinkedIn fetch with sub:", profile.linkedin_sub);
     let fetchedPosts: RawLinkedInPost[] = [];
     try {
       fetchedPosts = await fetchLinkedInPosts(
         profile.linkedin_access_token,
         profile.linkedin_sub || ""
       );
+      console.log("[fetch-posts] Fetch complete. Posts returned:", fetchedPosts.length);
     } catch (err) {
-      console.error("LinkedIn fetch error:", err);
+      console.error("[fetch-posts] LinkedIn fetch error:", err);
       return NextResponse.json(
         {
           error: "Failed to fetch LinkedIn posts",

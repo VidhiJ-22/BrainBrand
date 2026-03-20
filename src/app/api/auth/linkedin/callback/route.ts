@@ -149,9 +149,11 @@ export async function GET(request: NextRequest) {
 
     if (existingUser) {
       // User is already logged in — link LinkedIn to their existing account
-      await serviceClient
+      const { error: updateError } = await serviceClient
         .from("profiles")
-        .update({
+        .upsert({
+          id: existingUser.id,
+          email: existingUser.email,
           linkedin_connected: true,
           linkedin_access_token: tokenData.access_token,
           linkedin_token_expires_at: expiresAt,
@@ -161,11 +163,17 @@ export async function GET(request: NextRequest) {
           linkedin_sub: linkedinProfile.sub,
           full_name: existingUser.user_metadata?.full_name || linkedinProfile.name,
           avatar_url: linkedinProfile.picture,
-        })
-        .eq("id", existingUser.id);
+        });
+
+      if (updateError) {
+        console.error("Failed to update profile with LinkedIn data:", updateError);
+        return NextResponse.redirect(
+          `${appUrl}/settings?error=profile_update_failed`
+        );
+      }
 
       return NextResponse.redirect(
-        `${appUrl}/settings?linkedin=connected`
+        `${appUrl}/create-post?linkedin=connected`
       );
     }
 
@@ -196,7 +204,7 @@ export async function GET(request: NextRequest) {
           type: "magiclink",
           email: linkedinProfile.email,
           options: {
-            redirectTo: `${appUrl}/overview`,
+            redirectTo: `${appUrl}/create-post?linkedin=connected`,
           },
         });
 
@@ -216,7 +224,7 @@ export async function GET(request: NextRequest) {
         "token",
         sessionData.properties?.hashed_token || ""
       );
-      verifyUrl.searchParams.set("redirect_to", `${appUrl}/overview`);
+      verifyUrl.searchParams.set("redirect_to", `${appUrl}/create-post?linkedin=connected`);
 
       return NextResponse.redirect(verifyUrl.toString());
     }
@@ -280,7 +288,7 @@ export async function GET(request: NextRequest) {
       "token",
       sessionData.properties?.hashed_token || ""
     );
-    verifyUrl.searchParams.set("redirect_to", `${appUrl}/overview`);
+    verifyUrl.searchParams.set("redirect_to", `${appUrl}/create-post?linkedin=connected`);
 
     return NextResponse.redirect(verifyUrl.toString());
   } catch (err) {

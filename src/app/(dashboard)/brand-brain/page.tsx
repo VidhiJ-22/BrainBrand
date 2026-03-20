@@ -8,11 +8,18 @@ export const metadata: Metadata = {
 import type { Profile } from "@/lib/types/database";
 import PageHeader from "@/components/page-header";
 import AnalyzeProgress from "@/components/analyze-progress";
+import SetupPipeline from "@/components/setup-pipeline";
 import { Brain, Linkedin } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import BrandBrainDashboard from "./dashboard";
 
-export default async function BrandBrainPage() {
+export default async function BrandBrainPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ setup?: string }>;
+}) {
+  const params = await searchParams;
+  const isSetup = params.setup === "true";
   const supabase = await createClient();
   const {
     data: { user },
@@ -97,8 +104,9 @@ export default async function BrandBrainPage() {
         </div>
       )}
 
-      {/* State: Connected but no posts */}
-      {linkedInConnected && !hasPosts && (
+      {/* State: Connected but no posts — auto-setup after OAuth or manual prompt */}
+      {linkedInConnected && !hasPosts && isSetup && <SetupPipeline />}
+      {linkedInConnected && !hasPosts && !isSetup && (
         <div className="animate-fade-in-up flex flex-col items-center justify-center rounded-xl border border-gray-100 bg-white py-20 shadow-sm">
           <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-50">
             <Brain className="h-10 w-10 text-indigo-400" />
