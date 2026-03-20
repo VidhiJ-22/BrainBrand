@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check free tier limits (TEMPORARILY DISABLED FOR TESTING)
-    if (false && profile.subscription_plan === "free") {
+    if (false && profile?.subscription_plan === "free") {
       // Reset counter if month changed
       const resetAt = new Date(profile.ai_generations_reset_at);
       const now = new Date();
