@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
       const { data: profile } = await supabase
         .from("profiles")
         .select("subscription_plan")
-        .eq("id", user.id)
+        .eq("id", user!.id)
         .single();
 
       if (profile?.subscription_plan === "free") {

@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     // Check free tier limits (TEMPORARILY DISABLED FOR TESTING)
     if (false && profile?.subscription_plan === "free") {
       // Reset counter if month changed
-      const resetAt = new Date(profile.ai_generations_reset_at);
+      const resetAt = new Date(profile!.ai_generations_reset_at);
       const now = new Date();
       if (
         resetAt.getMonth() !== now.getMonth() ||
@@ -66,11 +66,11 @@ export async function POST(request: NextRequest) {
             ai_generations_this_month: 0,
             ai_generations_reset_at: now.toISOString(),
           })
-          .eq("id", user.id);
-        profile.ai_generations_this_month = 0;
+          .eq("id", user!.id);
+        profile!.ai_generations_this_month = 0;
       }
 
-      if (profile.ai_generations_this_month >= 5) {
+      if (profile!.ai_generations_this_month >= 5) {
         return NextResponse.json(
           {
             error: "Generation limit reached",
