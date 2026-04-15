@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check free plan limitations for scheduling (TEMPORARILY DISABLED FOR TESTING)
-    if (false && body.status === "scheduled") {
+    // Check free plan limitations for scheduling
+    if (process.env.ENABLE_SUBSCRIPTION_LIMITS === 'true' && body.status === "scheduled") {
       const { data: profile } = await supabase
         .from("profiles")
         .select("subscription_plan")

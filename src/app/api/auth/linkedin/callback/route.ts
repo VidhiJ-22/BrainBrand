@@ -178,12 +178,13 @@ export async function GET(request: NextRequest) {
     }
 
     // No existing session — check if a Supabase user exists for this email
-    const { data: existingUsers } = await serviceClient.auth.admin.listUsers();
-    const matchingUser = existingUsers?.users?.find(
-      (u) => u.email === linkedinProfile.email
-    );
+    const { data: existingProfile } = await serviceClient
+      .from('profiles')
+      .select('id')
+      .eq('email', linkedinProfile.email)
+      .single();
 
-    if (matchingUser) {
+    if (existingProfile) {
       // User exists but isn't logged in — update their LinkedIn data and sign them in
       await serviceClient
         .from("profiles")
@@ -195,7 +196,7 @@ export async function GET(request: NextRequest) {
           linkedin_sub: linkedinProfile.sub,
           avatar_url: linkedinProfile.picture,
         })
-        .eq("id", matchingUser.id);
+        .eq("id", existingProfile.id);
 
       // Generate a magic link to sign them in
       // We use a one-time token approach via admin

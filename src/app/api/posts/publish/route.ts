@@ -30,10 +30,6 @@ export async function POST(request: NextRequest) {
 
     console.log("[publish-route] User:", user.id);
     console.log("[publish-route] LinkedIn connected:", profile?.linkedin_connected);
-    console.log("[publish-route] Token length:", profile?.linkedin_access_token?.length || 0);
-    console.log("[publish-route] Token preview:", profile?.linkedin_access_token?.substring(0, 10) + "...");
-    console.log("[publish-route] LinkedIn sub:", profile?.linkedin_sub);
-    console.log("[publish-route] Token expires at:", profile?.linkedin_token_expires_at);
 
     if (!profile?.linkedin_connected || !profile.linkedin_access_token) {
       console.error("[publish-route] BLOCKED: LinkedIn not connected or no token");
@@ -47,7 +43,6 @@ export async function POST(request: NextRequest) {
     if (profile.linkedin_token_expires_at) {
       const expiresAt = new Date(profile.linkedin_token_expires_at);
       const isExpired = expiresAt < new Date();
-      console.log("[publish-route] Token expired:", isExpired, "| Expires:", expiresAt.toISOString(), "| Now:", new Date().toISOString());
       if (isExpired) {
         return NextResponse.json(
           {
@@ -91,8 +86,6 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
-
-    console.log("[publish-route] Content to publish (first 50 chars):", content.substring(0, 50) + "...");
 
     // Publish to LinkedIn
     console.log("[publish-route] Calling publish-post.ts...");

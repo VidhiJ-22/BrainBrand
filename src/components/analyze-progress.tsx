@@ -33,7 +33,7 @@ export default function AnalyzeProgress({
 }: AnalyzeProgressProps) {
   const [status, setStatus] = useState<
     "idle" | "analyzing" | "done" | "error"
-  >(autoStart ? "analyzing" : "idle");
+  >(autoStart ? "analyzing" : "idle"); 
   const [messageIndex, setMessageIndex] = useState(0);
   const [progress, setProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");

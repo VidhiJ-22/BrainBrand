@@ -31,7 +31,7 @@ export async function POST(request: Request) {
     // Get user profile
     const { data: profile } = await supabase
       .from("profiles")
-      .select("full_name, linkedin_headline, last_posts_fetched_at")
+      .select("full_name, linkedin_headline")
       .eq("id", user.id)
       .single();
 
@@ -51,49 +51,31 @@ export async function POST(request: Request) {
         .single();
 
       if (existing?.last_analyzed_at) {
-        // Don't re-analyze if analysis is newer than last post fetch
-        const analyzedAt = new Date(existing.last_analyzed_at);
-        const fetchedAt = profile.last_posts_fetched_at
-          ? new Date(profile.last_posts_fetched_at)
-          : null;
-
-        if (!fetchedAt || analyzedAt > fetchedAt) {
-          return NextResponse.json({
-            success: true,
-            cached: true,
-            message: "Analysis is already up to date.",
-          });
-        }
+        return NextResponse.json({
+          success: true,
+          cached: true,
+          message: "Analysis is already up to date.",
+        });
       }
     }
 
     // Fetch all posts for this user
     const { data: posts, error: postsError } = await supabase
-      .from("linkedin_posts")
-      .select(
-        "content, post_type, likes_count, comments_count, reposts_count, impressions, engagement_rate, posted_at"
-      )
-      .eq("user_id", user.id)
-      .order("posted_at", { ascending: false });
+      .from('drafts')
+      .select('content, status, created_at, updated_at')
+      .eq('user_id', user.id)
+      .in('status', ['published', 'draft'])
+      .order('created_at', { ascending: false });
 
     if (postsError) {
-      console.error("Error fetching posts for analysis:", postsError);
-      return NextResponse.json(
-        { error: "Failed to fetch posts" },
-        { status: 500 }
-      );
+      console.error('Error fetching drafts for analysis:', postsError);
+      return NextResponse.json({ error: 'Failed to fetch posts' }, { status: 500 });
     }
 
     if (!posts || posts.length === 0) {
-      return NextResponse.json(
-        {
-          error: "No posts found",
-          message:
-            "You need to fetch your LinkedIn posts first before running Brand Brain analysis.",
-          code: "NO_POSTS",
-        },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: 'No posts found', message:
+        'Create at least 5 posts to unlock Brand Brain analysis.',
+        code: 'NO_POSTS' }, { status: 400 });
     }
 
     if (posts.length < MIN_POSTS) {
@@ -108,8 +90,20 @@ export async function POST(request: Request) {
       );
     }
 
+    // Map drafts to the shape expected by generateBrandBrainAnalysis
+    const postsForAnalysis = posts.map((p) => ({
+      content: p.content as string,
+      post_type: "text",
+      likes_count: 0,
+      comments_count: 0,
+      reposts_count: 0,
+      impressions: 0,
+      engagement_rate: 0,
+      posted_at: p.created_at as string,
+    }));
+
     // Run the analysis
-    const analysis = await generateBrandBrainAnalysis(posts, {
+    const analysis = await generateBrandBrainAnalysis(postsForAnalysis, {
       name: profile.full_name || "User",
       headline: profile.linkedin_headline,
     });

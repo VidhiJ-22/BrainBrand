@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { publishToLinkedIn } from "@/lib/linkedin/publish-post";
 
@@ -10,7 +10,18 @@ function getServiceClient() {
   );
 }
 
-export async function POST() {
+export async function POST(request: NextRequest) {
+  const cronSecret = process.env.CRON_SECRET;
+  if (!cronSecret) {
+    console.error('[cron] CRON_SECRET not set');
+    return NextResponse.json({ error: 'Not configured' }, { status: 500 });
+  }
+  const provided = request.headers.get('authorization')?.replace('Bearer ', '').trim();
+  if (provided !== cronSecret) {
+    console.warn('[cron] Unauthorized attempt blocked');
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   console.log("[cron] ─── Publish Scheduled Posts ───");
   console.log("[cron] Run at:", new Date().toISOString());
 

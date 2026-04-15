@@ -951,7 +951,7 @@ export default function CreatePostEditor({
                 const res = await fetch("/api/posts/publish", {
                   method: "POST",
                   headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ content }),
+                  body: JSON.stringify({ content, draft_id: currentDraftId || undefined }),
                 });
 
                 const data = await res.json();

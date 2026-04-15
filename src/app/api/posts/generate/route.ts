@@ -9,13 +9,10 @@ interface GenerateRequest {
   tone?: string;
   length?: string;
   mode?: "generate" | "improve";
-  personal_story?: string;
 }
 
 export async function POST(request: NextRequest) {
   console.log("[generate] Route hit");
-  console.log("[generate] API key:", process.env.ANTHROPIC_API_KEY ?
-    process.env.ANTHROPIC_API_KEY.substring(0, 15) + "..." : "MISSING");
 
   try {
     const supabase = await createClient();
@@ -51,10 +48,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Check free tier limits (TEMPORARILY DISABLED FOR TESTING)
-    if (false && profile?.subscription_plan === "free") {
+    // Check free tier limits
+    if (profile.subscription_plan === "free") {
       // Reset counter if month changed
-      const resetAt = new Date(profile!.ai_generations_reset_at);
+      const resetAt = new Date(profile.ai_generations_reset_at);
       const now = new Date();
       if (
         resetAt.getMonth() !== now.getMonth() ||
@@ -66,11 +63,11 @@ export async function POST(request: NextRequest) {
             ai_generations_this_month: 0,
             ai_generations_reset_at: now.toISOString(),
           })
-          .eq("id", user!.id);
-        profile!.ai_generations_this_month = 0;
+          .eq("id", user.id);
+        profile.ai_generations_this_month = 0;
       }
 
-      if (profile!.ai_generations_this_month >= 5) {
+      if (profile.ai_generations_this_month >= 5) {
         return NextResponse.json(
           {
             error: "Generation limit reached",
@@ -172,7 +169,6 @@ ${bestPostSection}
 
 THE TOPIC/IDEA:
 ${body.topic}
-${body.personal_story?.trim() ? `\nTHEIR REAL PERSONAL STORY (weave this naturally into the post, do NOT use [bracket placeholders]):\n${body.personal_story}` : ""}
 
 INSTRUCTIONS:
 - Write in their exact voice — match their tone, vocabulary, sentence length, and style
@@ -183,9 +179,6 @@ INSTRUCTIONS:
 - ${lengthInstructions}
 - Include line breaks for readability (LinkedIn posts need whitespace)
 - ${hashtagNote}
-${body.personal_story?.trim() ? "- A real personal story was provided above. Weave it naturally into the post. Do NOT add [bracket placeholders]." : `- PERSONAL STORIES: If the topic would be stronger with a personal story, include a bracketed placeholder like [Share your experience with X here, e.g., "Describe the specific moment when..."]
-- Never write a fictional story on behalf of the user. Use [brackets] so they can add their own.
-- If tone is Storytelling, the post MUST include a story placeholder as the main body.`}
 - Return ONLY the post text. No explanation, no options, no meta-commentary.`;
     } else {
       // ── Generic path: no Brand Brain ──
@@ -305,44 +298,12 @@ Educational: Teaching-focused, step-by-step, practical. The reader should learn 
 Bold: Provocative, opinionated, direct. Takes a strong stance that some will disagree with. Designed to spark debate.
 If no tone is selected, default to Casual.
 
-HASHTAG SUGGESTIONS:
-After writing the post, on a separate line write HASHTAGS: followed by exactly 5 relevant hashtags separated by commas. Choose hashtags that are:
-- Specific to the topic (not generic like #business or #success)
-- Actually used on LinkedIn (common professional hashtags)
-- A mix of broad (50K+ followers) and niche (5K-50K followers)
-Example: HASHTAGS: #AIinMarketing, #LinkedInGrowth, #B2BMarketing, #ContentStrategy, #PersonalBranding
-
 OUTPUT FORMAT:
-Return ONLY the post text followed by the HASHTAGS line. No explanations, no "Here's your post:", no quotation marks around it, no notes about what you did. Just the raw post text exactly as it should appear on LinkedIn, then a blank line, then the HASHTAGS: line.`;
+Return ONLY the post text. No explanations, no "Here's your post:", no quotation marks around it, no notes about what you did. Just the raw post text exactly as it should appear on LinkedIn.`;
 
-      if (isImprove) {
-        systemPrompt = `You are a LinkedIn content editor. Improve the following LinkedIn post while keeping the same topic and core message.
-
-IMPROVEMENTS TO MAKE:
-- Make the hook shorter and more compelling (under 12 words)
-- Tighten every sentence. Cut unnecessary words.
-- Improve readability with better line breaks and spacing
-- Strengthen the CTA question at the end
-- Keep it between 100-180 words
-- Ensure short paragraphs (2 sentences max)
-
-RULES TO FOLLOW:
-- No em dashes or en dashes. Use commas or periods.
-- No semicolons.
-- No AI phrases: game-changer, landscape, leverage, delve, navigate, foster, elevate, here's the thing, let me share, in today's world, read that again, let that sink in
-- No fabricated stories or claims about the user
-- Keep any [bracket placeholders] for personal stories intact
-- Do not remove or change hashtags if they exist
-- Return ONLY the improved post text. No explanations.`;
-        userPrompt = body.topic;
-      } else {
-        if (body.personal_story?.trim()) {
-          systemPrompt += `\n\nIMPORTANT: The user has provided a real personal story. Use it naturally in the post. Do NOT add [bracket placeholders] since a real story was provided.`;
-          userPrompt = `Write a LinkedIn post about:\n\n${body.topic}\n\nWeave this personal experience naturally into the post (integrate it into the narrative, don't just paste it in as a separate section):\n${body.personal_story}\n\nReturn ONLY the post text. No explanation, no options, no meta-commentary.`;
-        } else {
-          userPrompt = `Write a LinkedIn post about:\n\n${body.topic}\n\nReturn ONLY the post text. No explanation, no options, no meta-commentary.`;
-        }
-      }
+      userPrompt = isImprove
+        ? `Improve this LinkedIn post draft. Make it more engaging while keeping the core message:\n\n${body.topic}\n\nReturn ONLY the improved post text. No explanation.`
+        : `Write a LinkedIn post about:\n\n${body.topic}\n\nReturn ONLY the post text. No explanation, no options, no meta-commentary.`;
     }
 
     // Call Claude
@@ -354,7 +315,6 @@ RULES TO FOLLOW:
     const client = new Anthropic({
       apiKey: process.env.ANTHROPIC_API_KEY!,
     });
-
     const message = await client.messages.create({
       model: "claude-sonnet-4-20250514",
       max_tokens: 2048,

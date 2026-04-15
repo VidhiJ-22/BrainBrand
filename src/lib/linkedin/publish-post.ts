@@ -28,10 +28,6 @@ export async function publishToLinkedIn(
   const authorUrn = `urn:li:person:${linkedinSub}`;
   console.log("[publish] Starting publish to LinkedIn");
   console.log("[publish] Author URN:", authorUrn);
-  console.log("[publish] Token length:", accessToken?.length || 0);
-  console.log("[publish] Token preview:", accessToken?.substring(0, 10) + "...");
-  console.log("[publish] Content length:", content.length);
-  console.log("[publish] Content preview:", content.substring(0, 50) + "...");
 
   try {
     // Try v2/posts endpoint first (Community Management API / newer apps)
@@ -85,12 +81,7 @@ async function publishViaPostsApi(
     "X-Restli-Protocol-Version": "2.0.0",
   };
 
-  console.log("[publish] v2/posts request:", {
-    url,
-    method: "POST",
-    headers: { ...headers, Authorization: `Bearer ${accessToken.substring(0, 10)}...` },
-    body,
-  });
+  console.log('[publish] v2/posts → POST', url);
 
   const response = await fetch(url, {
     method: "POST",
@@ -155,12 +146,7 @@ async function publishViaUgcApi(
     "X-Restli-Protocol-Version": "2.0.0",
   };
 
-  console.log("[publish] ugcPosts request:", {
-    url,
-    method: "POST",
-    headers: { ...headers, Authorization: `Bearer ${accessToken.substring(0, 10)}...` },
-    body,
-  });
+  console.log('[publish] ugcPosts → POST', url);
 
   const response = await fetch(url, {
     method: "POST",
